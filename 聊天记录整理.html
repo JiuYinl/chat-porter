@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatGPT Mirror - Obsidian Light</title>
+    
+    <!-- 核心库 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- GitHub Light 风格的代码高亮 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    
+    <style>
+        /* --- Obsidian / ChatGPT 浅色主题 --- */
+        :root {
+            --bg-sidebar: #f7f7f8;
+            --bg-main: #ffffff;
+            --bg-user-bubble: #f3f3f3;
+            --text-primary: #2d2d2d;
+            --text-secondary: #8e8ea0;
+            --border-color: #e5e5e5;
+            --code-bg: #f7f7f8;
+        }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        /* 滚动条 */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+        .chat-item {
+            transition: all 0.2s;
+            border-radius: 0.5rem;
+            margin-bottom: 2px;
+            color: #374151;
+        }
+        .chat-item:hover { background-color: #ececf1; }
+        .chat-item.active { background-color: #ececf1; font-weight: 600; color: black; }
+
+        .msg-user-container {
+            background-color: var(--bg-user-bubble);
+            color: var(--text-primary);
+            border-radius: 1.5rem;
+            padding: 12px 20px;
+            display: inline-block;
+            max-width: 85%;
+            font-size: 1rem;
+        }
+
+        .msg-assistant-container {
+            background-color: transparent;
+            padding: 0;
+            width: 100%;
+            color: var(--text-primary);
+        }
+
+        .markdown-body { font-size: 1rem; line-height: 1.75; color: #2d2d2d; }
+        .markdown-body p { margin-bottom: 1.2em; }
+        
+        /* --- 代码块优化 (按照官网/Obsidian 风格) --- */
+        .markdown-body pre {
+            background: var(--code-bg);
+            padding: 24px 16px 16px 16px; 
+            border-radius: 8px;
+            margin: 16px 0;
+            position: relative;
+            /* 解决“全排在一行”：支持自动换行 */
+            white-space: pre-wrap; 
+            word-wrap: break-word;
+            overflow-x: hidden; 
+        }
+
+        /* 语言标识符：右上角，极小字体，无框包裹 */
+        .markdown-body pre::after {
+            content: attr(data-lang);
+            position: absolute;
+            top: 6px;
+            right: 12px;
+            font-size: 10px;
+            color: #9ca3af;
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+            text-transform: lowercase;
+            font-weight: 500;
+        }
+
+        .markdown-body code { 
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace; 
+            font-size: 0.9em; 
+        }
+
+        .markdown-body pre code {
+            background: transparent;
+            padding: 0;
+            color: #374151;
+            line-height: 1.6;
+            display: block;
+        }
+
+        .markdown-body :not(pre) > code {
+            background: rgba(175, 184, 193, 0.2);
+            padding: 2px 6px;
+            border-radius: 6px;
+            color: #24292e;
+        }
+        
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 { 
+            font-weight: 700; 
+            margin-top: 1.5em; 
+            margin-bottom: 0.8em; 
+            color: #111; 
+        }
+        .markdown-body ul, .markdown-body ol { margin-left: 24px; list-style: disc; margin-bottom: 1em; }
+
+        #upload-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-main); z-index: 50;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+    </style>
+</head>
+<body class="flex h-screen">
+
+    <!-- 侧边栏 -->
+    <div class="w-[280px] h-full flex flex-col bg-[#f7f7f8] flex-shrink-0 border-r border-gray-200" id="sidebar">
+        <div class="p-4 sticky top-0 bg-[#f7f7f8] z-10">
+            <div class="flex items-center justify-between mb-4">
+                <h1 class="font-bold text-gray-700 text-lg">History</h1>
+                <button onclick="location.reload()" class="p-2 hover:bg-gray-200 rounded-md transition">
+                    <i data-lucide="plus" class="w-5 h-5 text-gray-600"></i>
+                </button>
+            </div>
+            <div class="relative group">
+                <input type="text" id="search-box" placeholder="Search titles..." 
+                    class="w-full bg-white border border-gray-300 text-sm rounded-lg py-2 pl-9 pr-3 focus:outline-none focus:ring-2 focus:ring-gray-200">
+                <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+            </div>
+        </div>
+        <div class="flex-1 overflow-y-auto px-3 pb-4" id="chat-list"></div>
+        <div class="p-4 border-t border-gray-200 text-xs text-gray-400 text-center font-mono">
+            V6.3 FIXED
+        </div>
+    </div>
+
+    <!-- 主聊天区 -->
+    <div class="flex-1 flex flex-col h-full relative bg-white">
+        <div class="h-14 border-b border-gray-100 flex items-center px-8 justify-between flex-shrink-0 bg-white/80 backdrop-blur-sm sticky top-0 z-20">
+            <div class="font-semibold text-gray-800 truncate text-lg" id="header-title">ChatGPT Archive</div>
+            <div class="text-xs text-gray-400 font-mono" id="header-info"></div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto w-full" id="chat-scroll">
+            <div class="w-full max-w-3xl mx-auto px-6 py-10 flex flex-col gap-8" id="chat-container">
+                <div class="flex flex-col items-center justify-center h-[60vh] text-center opacity-60">
+                    <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+                        <i data-lucide="book-open" class="w-8 h-8 text-gray-400"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold mb-2 text-gray-800">Ready to Read</h2>
+                    <p class="text-gray-500">Select a conversation from the sidebar.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 上传遮罩 -->
+    <div id="upload-screen">
+        <div class="bg-white p-12 rounded-2xl border border-gray-200 shadow-xl text-center max-w-md w-full">
+            <div class="w-20 h-20 bg-gray-50 rounded-full mx-auto mb-6 flex items-center justify-center">
+                <i data-lucide="file-json" class="w-10 h-10 text-gray-600"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-900 mb-3">Import History</h2>
+            <p class="text-gray-500 text-sm mb-8 leading-relaxed">Please upload your <code>conversations.json</code> file.</p>
+            <button onclick="document.getElementById('file-input').click()" class="w-full py-3.5 bg-black text-white font-medium rounded-xl hover:bg-gray-800 transition">
+                Select File
+            </button>
+            <input type="file" id="file-input" accept=".json" hidden>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        
+        // --- 修复 [object Object] Bug ---
+        const renderer = new marked.Renderer();
+        // 在新版本 marked 中，code 接收的是一个对象
+        renderer.code = function(tokenOrCode, lang) {
+            let codeText, language;
+            if (typeof tokenOrCode === 'object') {
+                codeText = tokenOrCode.text;
+                language = tokenOrCode.lang;
+            } else {
+                codeText = tokenOrCode;
+                language = lang;
+            }
+            return `<pre data-lang="${language || ''}"><code class="language-${language || ''}">${codeText}</code></pre>`;
+        };
+        marked.setOptions({ renderer: renderer });
+
+        let rawData = [];
+        let renderData = []; 
+        const branchState = {}; 
+
+        const fileInput = document.getElementById('file-input');
+        const uploadScreen = document.getElementById('upload-screen');
+        const chatList = document.getElementById('chat-list');
+        const chatContainer = document.getElementById('chat-container');
+        const searchBox = document.getElementById('search-box');
+
+        fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+        document.body.addEventListener('dragover', e => e.preventDefault());
+        document.body.addEventListener('drop', (e) => { e.preventDefault(); if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+
+        function handleFile(file) {
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const json = JSON.parse(e.target.result);
+                    rawData = json;
+                    renderData = json;
+                    uploadScreen.style.display = 'none';
+                    renderSidebar();
+                } catch(err) { alert('Invalid JSON file.'); }
+            };
+            reader.readAsText(file);
+        }
+
+        function renderSidebar() {
+            chatList.innerHTML = '';
+            renderData.forEach(chat => {
+                const el = document.createElement('div');
+                el.className = 'chat-item px-4 py-3 text-sm truncate cursor-pointer select-none rounded-lg';
+                el.innerText = chat.title || "Untitled Chat";
+                el.onclick = () => loadChat(chat.conversation_id || chat.id);
+                chatList.appendChild(el);
+            });
+        }
+
+        searchBox.addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            renderData = term ? rawData.filter(chat => chat.title?.toLowerCase().includes(term)) : rawData;
+            renderSidebar();
+        });
+
+        function loadChat(chatId) {
+            const chat = rawData.find(c => c.id === chatId || c.conversation_id === chatId);
+            if (!chat) return;
+
+            document.querySelectorAll('.chat-item').forEach(i => {
+                if (i.innerText === chat.title) i.classList.add('active');
+                else i.classList.remove('active');
+            });
+
+            document.getElementById('header-title').innerText = chat.title || "Untitled";
+            chatContainer.innerHTML = ''; 
+
+            let leafNodeId = branchState[chatId] || chat.current_node;
+            const path = [];
+            let curr = leafNodeId;
+            while (curr) {
+                const node = chat.mapping[curr];
+                path.unshift(node);
+                curr = node.parent;
+            }
+
+            path.forEach(node => {
+                if (!node.message) return;
+                const msg = node.message;
+                const role = msg.author.role;
+                if (role === 'system') return;
+
+                let contentHTML = '';
+                if (msg.content && msg.content.parts) {
+                    const parts = msg.content.parts.map(p => typeof p === 'string' ? p : JSON.stringify(p)).join('\n');
+                    if (parts.trim() === '') return;
+                    contentHTML = marked.parse(parts);
+                }
+
+                const row = document.createElement('div');
+                row.className = `w-full flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+
+                const bubble = document.createElement('div');
+                bubble.className = role === 'user' ? 'msg-user-container' : 'msg-assistant-container';
+                
+                const textDiv = document.createElement('div');
+                textDiv.className = 'markdown-body';
+                textDiv.innerHTML = contentHTML;
+                bubble.appendChild(textDiv);
+
+                if (node.parent) {
+                    const parentNode = chat.mapping[node.parent];
+                    const siblings = parentNode.children;
+                    if (siblings.length > 1) {
+                        const currentIndex = siblings.indexOf(node.id);
+                        const switcher = document.createElement('div');
+                        switcher.className = 'flex items-center gap-1 mt-2 text-xs text-gray-400 font-mono select-none';
+                        switcher.innerHTML = `
+                            <button onclick="event.stopPropagation(); window.switchBranch('${chatId}', '${siblings[currentIndex-1]}')" class="${currentIndex === 0 ? 'opacity-0 cursor-default' : 'hover:text-gray-900'} p-1"><i data-lucide="chevron-left" class="w-3 h-3"></i></button>
+                            <span class="mx-1">${currentIndex + 1}/${siblings.length}</span>
+                            <button onclick="event.stopPropagation(); window.switchBranch('${chatId}', '${siblings[currentIndex+1]}')" class="${currentIndex === siblings.length - 1 ? 'opacity-0 cursor-default' : 'hover:text-gray-900'} p-1"><i data-lucide="chevron-right" class="w-3 h-3"></i></button>
+                        `;
+                        bubble.appendChild(switcher);
+                    }
+                }
+
+                if (role === 'assistant') {
+                    const metaDiv = document.createElement('div');
+                    metaDiv.className = 'mt-3 pt-2 text-[10px] text-gray-400 flex gap-3 font-mono border-t border-gray-100 opacity-60';
+                    const modelName = msg.metadata?.model_slug || 'gpt';
+                    const date = new Date(msg.create_time * 1000).toLocaleString();
+                    metaDiv.innerHTML = `<span>${modelName.toUpperCase()}</span><span>${date}</span>`;
+                    bubble.appendChild(metaDiv);
+                }
+
+                row.appendChild(bubble);
+                chatContainer.appendChild(row);
+            });
+
+            hljs.highlightAll();
+            lucide.createIcons();
+        }
+
+        window.switchBranch = function(chatId, targetNodeId) {
+            if (targetNodeId === 'undefined') return;
+            const chat = rawData.find(c => c.id === chatId || c.conversation_id === chatId);
+            let curr = targetNodeId;
+            while(true) {
+                const node = chat.mapping[curr];
+                if (!node.children || node.children.length === 0) break;
+                curr = node.children[node.children.length - 1]; 
+            }
+            branchState[chatId] = curr;
+            loadChat(chatId);
+        }
+
+    </script>
+</body>
+</html>

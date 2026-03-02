@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Porter (GPT & Claude)</title>
+    
+    <!-- 核心库 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    
+    <style>
+        :root {
+            --bg-sidebar: #f7f7f8;
+            --bg-main: #ffffff;
+            --text-primary: #2d2d2d;
+            --code-bg: #f7f7f8;
+        }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        /* 列表项样式 */
+        .chat-item {
+            transition: all 0.2s;
+            border-radius: 0.5rem;
+            margin-bottom: 2px;
+            color: #374151;
+            padding: 12px 16px;
+            cursor: pointer;
+        }
+        .chat-item:hover { background-color: #ececf1; }
+        .chat-item.active { background-color: #ececf1; font-weight: 600; color: black; }
+
+        /* Markdown 预览区排版 */
+        .markdown-body { font-size: 1rem; line-height: 1.75; }
+        .markdown-body pre {
+            background: var(--code-bg);
+            padding: 24px 16px 16px 16px; 
+            border-radius: 8px;
+            margin: 16px 0;
+            white-space: pre-wrap; 
+            word-wrap: break-word;
+            border: 1px solid #e5e7eb;
+            position: relative;
+        }
+        .markdown-body pre::after {
+            content: attr(data-lang);
+            position: absolute; top: 6px; right: 12px;
+            font-size: 10px; color: #9ca3af;
+            text-transform: lowercase;
+        }
+
+        .markdown-body code { font-family: 'Menlo', 'Monaco', 'Courier New', monospace; font-size: 0.9em; }
+        .markdown-body :not(pre) > code { background: rgba(175, 184, 193, 0.2); padding: 2px 6px; border-radius: 6px; }
+
+        #upload-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-main); z-index: 50;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+    </style>
+</head>
+<body class="flex h-screen">
+
+    <!-- 侧边栏 -->
+    <div class="w-[320px] h-full flex flex-col bg-[#f7f7f8] border-r border-gray-200">
+        <div class="p-6">
+            <h1 class="font-bold text-xl mb-1 text-gray-800">Chat Porter</h1>
+            <p class="text-[10px] text-gray-400 mb-4 font-mono">GPT & CLAUDE COMPATIBLE</p>
+            <div class="space-y-3">
+                <button onclick="exportAllToZip()" class="w-full flex items-center justify-center gap-2 py-2.5 bg-black text-white text-sm font-medium rounded-xl hover:bg-gray-800 transition shadow-md">
+                    <i data-lucide="archive" class="w-4 h-4"></i> 批量导出为 Obsidian 包
+                </button>
+                <input type="text" id="search-box" placeholder="搜索对话标题..." class="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-gray-200 outline-none">
+            </div>
+        </div>
+        <div class="flex-1 overflow-y-auto px-4 pb-6" id="chat-list"></div>
+    </div>
+
+    <!-- 主展示区 -->
+    <div class="flex-1 flex flex-col h-full bg-white">
+        <div class="h-16 border-b border-gray-100 flex items-center px-8 justify-between sticky top-0 bg-white/90 backdrop-blur-md z-10">
+            <div class="font-bold text-gray-800 truncate" id="header-title">请加载历史记录</div>
+            <div class="flex items-center gap-4">
+                <span id="data-type-tag" class="text-[10px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-400 font-mono"></span>
+                <button id="btn-export-single" onclick="exportCurrentToMd()" class="hidden flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm">
+                    <i data-lucide="file-text" class="w-4 h-4"></i> 导出当前 .md
+                </button>
+            </div>
+        </div>
+        <div class="flex-1 overflow-y-auto p-8" id="chat-display">
+            <div class="max-w-3xl mx-auto space-y-10" id="chat-content"></div>
+        </div>
+    </div>
+
+    <!-- 上传页 -->
+    <div id="upload-screen">
+        <div class="text-center p-10 bg-white rounded-3xl border border-gray-100 shadow-2xl max-w-sm">
+            <div class="w-20 h-20 bg-indigo-50 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i data-lucide="layers" class="w-10 h-10"></i>
+            </div>
+            <h2 class="text-2xl font-bold mb-2">全平台聊天导出</h2>
+            <p class="text-gray-400 text-sm mb-8 leading-relaxed">支持 ChatGPT 或 Claude 的官方导出文件<br>自动生成符合 Liora 习惯的 Obsidian 格式</p>
+            <button onclick="document.getElementById('file-input').click()" class="bg-black text-white px-10 py-3 rounded-xl font-bold hover:bg-gray-800 transition">选择 JSON 文件</button>
+            <input type="file" id="file-input" accept=".json" hidden>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        
+        const renderer = new marked.Renderer();
+        renderer.code = function(tokenOrCode, lang) {
+            let codeText = typeof tokenOrCode === 'object' ? tokenOrCode.text : tokenOrCode;
+            let language = typeof tokenOrCode === 'object' ? tokenOrCode.lang : lang;
+            return `<pre data-lang="${language || ''}"><code class="language-${language || ''}">${codeText}</code></pre>`;
+        };
+        marked.setOptions({ renderer });
+
+        let rawData = [];
+        let filteredData = [];
+        let currentChatId = null;
+
+        document.getElementById('file-input').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    rawData = JSON.parse(ev.target.result);
+                    filteredData = rawData;
+                    document.getElementById('upload-screen').style.display = 'none';
+                    renderSidebar();
+                } catch(err) { alert('文件解析错误，请确保是官方导出的 JSON。'); }
+            };
+            reader.readAsText(file);
+        });
+
+        function renderSidebar() {
+            const list = document.getElementById('chat-list');
+            list.innerHTML = '';
+            filteredData.forEach(chat => {
+                const el = document.createElement('div');
+                const id = chat.id || chat.conversation_id || chat.uuid;
+                el.className = `chat-item ${currentChatId === id ? 'active' : ''}`;
+                el.innerText = chat.title || chat.name || "未命名对话";
+                el.onclick = () => loadChat(id);
+                list.appendChild(el);
+            });
+        }
+
+        document.getElementById('search-box').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            filteredData = rawData.filter(c => (c.title || c.name)?.toLowerCase().includes(term));
+            renderSidebar();
+        });
+
+        function loadChat(id) {
+            currentChatId = id;
+            const chat = rawData.find(c => (c.id || c.conversation_id || c.uuid) === id);
+            document.getElementById('header-title').innerText = chat.title || chat.name;
+            document.getElementById('btn-export-single').classList.remove('hidden');
+            
+            // 显示数据类型标签
+            const tag = document.getElementById('data-type-tag');
+            tag.innerText = chat.mapping ? "CHATGPT SOURCE" : "CLAUDE SOURCE";
+
+            const contentArea = document.getElementById('chat-content');
+            contentArea.innerHTML = '';
+            
+            const messages = getMessages(chat);
+            messages.forEach(m => {
+                const div = document.createElement('div');
+                div.className = m.role === 'user' ? 'text-right' : 'text-left';
+                const timeStr = formatTime(m.time);
+                
+                div.innerHTML = `
+                    <div class="text-[10px] text-gray-400 mb-1 font-mono">${m.role.toUpperCase()} | ${timeStr}</div>
+                    <div class="inline-block text-left p-5 rounded-2xl max-w-[90%] ${m.role === 'user' ? 'bg-gray-100' : 'bg-white border border-gray-100'} markdown-body">
+                        ${marked.parse(m.content)}
+                    </div>
+                `;
+                contentArea.appendChild(div);
+            });
+            renderSidebar();
+            hljs.highlightAll();
+        }
+
+        function formatTime(timestamp) {
+            if (!timestamp) return "N/A";
+            // 兼容 Unix 秒级时间戳和 ISO 字符串
+            const d = isNaN(timestamp) ? new Date(timestamp) : new Date(timestamp * 1000);
+            const yy = String(d.getFullYear()).slice(-2);
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            const hh = String(d.getHours()).padStart(2, '0');
+            const min = String(d.getMinutes()).padStart(2, '0');
+            return `${yy}-${mm}-${dd} ${hh}:${min}`;
+        }
+
+        function getMessages(chat) {
+            let msgs = [];
+            // 1. ChatGPT 解析逻辑 (Tree mapping)
+            if (chat.mapping) {
+                let curr = chat.current_node;
+                while (curr) {
+                    const node = chat.mapping[curr];
+                    if (node?.message?.content?.parts && (node.message.author.role === 'user' || node.message.author.role === 'assistant')) {
+                        msgs.unshift({
+                            role: node.message.author.role,
+                            content: node.message.content.parts.join('\n'),
+                            time: node.message.create_time,
+                            model: node.message.metadata?.model_slug || 'gpt'
+                        });
+                    }
+                    curr = node?.parent;
+                }
+            } 
+            // 2. Claude 解析逻辑 (Flat messages list)
+            else if (chat.chat_messages) {
+                msgs = chat.chat_messages.map(m => ({
+                    role: m.sender === 'assistant' ? 'assistant' : 'user',
+                    content: m.text,
+                    time: m.created_at, // Claude 导出通常是 ISO 字符串
+                    model: 'claude'
+                })).filter(m => m.content && m.content.trim() !== "");
+            }
+            return msgs;
+        }
+
+        function generateMarkdown(chat) {
+            const messages = getMessages(chat);
+            const title = chat.title || chat.name || "Untitled";
+            // 获取首条消息时间作为文档日期
+            const baseDate = messages.length > 0 ? formatTime(messages[0].time).split(' ')[0] : "2026-XX-XX";
+            
+            let md = `---\ntitle: "${title}"\ndate: 20${baseDate}\ntags: [chat-log, ${chat.mapping ? 'chatgpt' : 'claude'}]\n---\n\n# ${title}\n\n`;
+            
+            messages.forEach(m => {
+                const timeStr = formatTime(m.time);
+                if (m.role === 'user') {
+                    // Liora's Format: > #user [Time] + 空行
+                    md += `> #user [${timeStr}]\n> \n> ${m.content.split('\n').join('\n> ')}\n\n`;
+                } else {
+                    // Liora's Format: #[model] [Time] + 两个换行
+                    let modelTag = m.model.replace('gpt-', '').replace('-mini', '').replace('openai-', '');
+                    // 如果是 Claude，进一步清理模型名（可选）
+                    if (modelTag === 'claude') modelTag = 'claude-3'; 
+                    md += `#${modelTag} [${timeStr}]\n\n${m.content}\n\n\n`;
+                }
+            });
+            return md;
+        }
+
+        function exportCurrentToMd() {
+            const chat = rawData.find(c => (c.id || c.conversation_id || c.uuid) === currentChatId);
+            const md = generateMarkdown(chat);
+            const blob = new Blob([md], { type: 'text/markdown' });
+            const a = document.createElement('a');
+            const safeTitle = (chat.title || chat.name || "Untitled").replace(/[\\/:*?"<>|]/g, '_');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${safeTitle}.md`;
+            a.click();
+        }
+
+        async function exportAllToZip() {
+            if (rawData.length === 0) return;
+            const zip = new JSZip();
+            rawData.forEach(chat => {
+                const md = generateMarkdown(chat);
+                const safeTitle = (chat.title || chat.name || "Untitled").replace(/[\\/:*?"<>|]/g, '_');
+                zip.file(`${safeTitle}.md`, md);
+            });
+            const content = await zip.generateAsync({ type: "blob" });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(content);
+            a.download = `Chat_Obsidian_Export.zip`;
+            a.click();
+        }
+    </script>
+</body>
+</html>
