@@ -1,5 +1,6 @@
 # chat-porter
 > chatGPT和Claude聊天记录解析以及导出md前端页面
+> 极简风格解析chatGPT聊天记录及查看页面
 
 🌌 Chat Porter (GPT & Claude to Obsidian)
 
